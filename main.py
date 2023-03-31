@@ -58,14 +58,14 @@ async def load_data_to_df(params, token: str):
         return dd.concat(all_chunks)
 
 
-def load_and_push(chunk, token, project_id, dataset_name, table_name, client):
-    async def load_and_push_async(chunk, token, project_id, dataset_name, table_name, client):
+def load_and_push(chunk, token, project_id, table_name, client):
+    async def load_and_push_async(chunk, token, project_id, table_name, client):
         api_results = await load_data_to_df(chunk, token)
         return await push_to_bq_in_parallel(
-            client, [api_results], project_id, dataset_name, table_name
+            client, [api_results], project_id, table_name
         )
 
-    return asyncio.run(load_and_push_async(chunk, token, project_id, dataset_name, table_name, client))
+    return asyncio.run(load_and_push_async(chunk, token, project_id, table_name, client))
 
 
 async def main(start_date,
@@ -76,13 +76,6 @@ async def main(start_date,
                token):
     try:
         client = bigquery.Client(project_id)
-        res = check_if_table_exists(client, dataset_name, table_name)
-        if res == 0:
-            create_partitioned_table(client,
-                                     project_id,
-                                     dataset_name,
-                                     table_name)
-
         delete_temp_table(client=client,
                           project_id=project_id,
                           table_name=table_name)
@@ -93,12 +86,25 @@ async def main(start_date,
         with cf.ThreadPoolExecutor() as executor:
             for api_chunk in range(0, len(list_of_params), chunk_size):
                 chunk = list_of_params[api_chunk:api_chunk + chunk_size]
-                future = executor.submit(load_and_push, chunk, token, project_id, dataset_name, table_name, client)
+                future = executor.submit(load_and_push, chunk, token, project_id, table_name, client)
                 print(future.result())
+        res = check_if_table_exists(client, dataset_name, table_name)
+        if res == 0:
+            create_partitioned_table(client,
+                                     project_id,
+                                     dataset_name,
+                                     table_name)
+
         merge_data(client=client,
                    project_id=project_id,
                    dataset_name=dataset_name,
                    table_name=table_name)
+        create_search_index_on_table(
+            client=client,
+            project_id=project_id,
+            dataset_name=dataset_name,
+            table_name=table_name
+        )
         return True
 
     except Exception as error:
@@ -113,7 +119,7 @@ def run(request):
     # end_date = request.get_json().get('end_date')
     project_id = 'main-project-362218'
     dataset_name = 'main_data'
-    table_name = 'nyc_fire_incident_data'
+    table_name = 'nyc_fire_incident_data_TEST'
     token = f'{TOKEN}'
 
     start_date = '2005-01-01'

@@ -1,6 +1,6 @@
 from imports import List, logging, bigquery, BigQueryError, Final, LoadJobConfig, LoadJob, pd, datetime, timedelta, \
-    Dict, Any, TypedDict, cf, dd, mp, DateRange
-from transformations import parse_data
+    Dict, Any, TypedDict, cf, dd, mp, DateRange, np
+from transformations import parse_data, hash_element
 
 
 def create_partitioned_table(client: bigquery.Client,
@@ -51,8 +51,11 @@ def check_if_table_exists(client: bigquery.Client,
         END IF
         """
         query: bigquery.QueryJob = client.query(query_to_run)
-        print('Table deleted successfully')
         for row in query.result():
+            if row[0] == 0:
+                print('Table does not exists')
+            else:
+                print('Table does exists')
             return row[0]
 
     except Exception as error:
@@ -62,9 +65,9 @@ def check_if_table_exists(client: bigquery.Client,
 
 def create_search_index_on_table(client: bigquery.Client,
                                  project_id: str,
-                                 dataset_id: str,
+                                 dataset_name: str,
                                  table_name: str) -> str:
-    table_id: str = f'{project_id}.{dataset_id}.{table_name}'
+    table_id: str = f'{project_id}.{dataset_name}.{table_name}'
 
     """
     The search index is created on all columns in the table by specifying "ALL COLUMNS" after the table name. 
@@ -160,9 +163,6 @@ def run_job(client: bigquery.Client, destination_table_id: str, data_to_send: pd
             skip_leading_rows=0,
             source_format=bigquery.SourceFormat.CSV,
             autodetect=True,
-            # schema=[
-            #     bigquery.SchemaField("year", bigquery.enums.SqlTypeNames.STRING),
-            # ],
             clustering_fields=['incident_borough',
                                'incident_classification_group',
                                'incident_classification',
@@ -241,8 +241,9 @@ async def push_to_bq_in_parallel(client,
         thread_data = [f.result() for f in cf.as_completed(data_results)]
 
         data_to_send = dd.concat(thread_data).compute(scheduler="processes")
-
+        data_to_send['primary_key'] = np.vectorize(hash_element)(data_to_send['primary_key'])
         try:
+
             return upload_data_to_bq(client=client,
                                      project_id=project_id,
                                      table_name=table_name,
