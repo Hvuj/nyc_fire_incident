@@ -1,7 +1,7 @@
 from imports import pd, io, bigquery, dd, asyncio, aiohttp, cf, List
 from settings import TOKEN
-from data_utils import prepare_data_by_day, push_to_bq_in_parallel, create_partitioned_table, check_if_table_exists, \
-    delete_temp_table, merge_data, create_search_index_on_table
+from data_utils import prepare_data_by_day, push_to_bq_in_parallel, create_search_indexes, delete_tables, \
+    check_if_tables_exist, merge_tables
 
 
 async def get_data(session, param, offset: int = 0):
@@ -76,9 +76,9 @@ async def main(start_date,
                token):
     try:
         client = bigquery.Client(project_id)
-        delete_temp_table(client=client,
-                          project_id=project_id,
-                          table_name=table_name)
+        delete_tables(client=client,
+                      project_id=project_id,
+                      table_name=table_name)
 
         list_of_params = prepare_data_by_day(start_date, end_date)
 
@@ -88,18 +88,20 @@ async def main(start_date,
                 chunk = list_of_params[api_chunk:api_chunk + chunk_size]
                 future = executor.submit(load_and_push, chunk, token, project_id, table_name, client)
                 print(future.result())
-        res = check_if_table_exists(client, dataset_name, table_name)
-        if res == 0:
-            create_partitioned_table(client,
-                                     project_id,
-                                     dataset_name,
-                                     table_name)
 
-        merge_data(client=client,
-                   project_id=project_id,
-                   dataset_name=dataset_name,
-                   table_name=table_name)
-        create_search_index_on_table(
+        check_if_tables_exist(client=client,
+                              project_id=project_id,
+                              dataset_name=dataset_name,
+                              table_name=table_name)
+
+        merge_tables(
+            client=client,
+            project_id=project_id,
+            dataset_name=dataset_name,
+            table_name=table_name
+        )
+
+        create_search_indexes(
             client=client,
             project_id=project_id,
             dataset_name=dataset_name,

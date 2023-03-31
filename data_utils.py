@@ -140,10 +140,10 @@ def merge_data(client: bigquery.Client,
         raise BigQueryError('An error occurred while fetching data from BigQuery') from error
 
 
-def upload_data_to_bq(client: bigquery.Client,
-                      project_id: str,
-                      table_name: str,
-                      data_to_send: pd.DataFrame) -> str:
+async def upload_data_to_bq(client: bigquery.Client,
+                            project_id: str,
+                            table_name: str,
+                            data_to_send: pd.DataFrame) -> str:
     destination_table_id: Final[str] = f"{project_id}.staging.{table_name}_staging"
 
     try:
@@ -158,27 +158,48 @@ def upload_data_to_bq(client: bigquery.Client,
 def run_job(client: bigquery.Client, destination_table_id: str, data_to_send: pd.DataFrame) -> str:
     try:
         logging.info(f'Pushing data to table: {destination_table_id}')
-        job_config: LoadJobConfig = bigquery.LoadJobConfig(
-            write_disposition="WRITE_APPEND",
-            skip_leading_rows=0,
-            source_format=bigquery.SourceFormat.CSV,
-            autodetect=True,
-            clustering_fields=['incident_borough',
-                               'incident_classification_group',
-                               'incident_classification',
-                               'alarm_level_index_description'],
-            range_partitioning=bigquery.RangePartitioning(
-                range_=bigquery.PartitionRange(start=2005, end=6005, interval=1),
-                field="year"
+
+        if 'metrics' in destination_table_id:
+            job_config: LoadJobConfig = bigquery.LoadJobConfig(
+                write_disposition="WRITE_APPEND",
+                skip_leading_rows=0,
+                source_format=bigquery.SourceFormat.CSV,
+                autodetect=True,
+                clustering_fields=['incident_borough',
+                                   'incident_classification_group',
+                                   'incident_classification',
+                                   'alarm_level_index_description'],
+                range_partitioning=bigquery.RangePartitioning(
+                    range_=bigquery.PartitionRange(start=2005, end=6005, interval=1),
+                    field="year"
+                )
             )
-        )
-        job: LoadJob = client.load_table_from_dataframe(
-            data_to_send, destination_table_id, job_config=job_config
-        )  # Make an API request.
-        job.result()  # Wait for the job to complete.
-        table = client.get_table(destination_table_id)  # Make an API request.
-        print(f"Loaded {table.num_rows} rows and {len(table.schema)} columns to {destination_table_id}")
-        logging.info(f'Upload to BigQuery completed, job status: {job.state}')
+            job: LoadJob = client.load_table_from_dataframe(
+                data_to_send, destination_table_id, job_config=job_config
+            )  # Make an API request.
+            job.result()  # Wait for the job to complete.
+            table = client.get_table(destination_table_id)  # Make an API request.
+            print(f"Loaded {table.num_rows} rows and {len(table.schema)} columns to {destination_table_id}")
+            logging.info(f'Upload to BigQuery completed, job status: {job.state}')
+        else:
+            job_config: LoadJobConfig = bigquery.LoadJobConfig(
+                write_disposition="WRITE_APPEND",
+                skip_leading_rows=0,
+                source_format=bigquery.SourceFormat.CSV,
+                autodetect=True,
+                clustering_fields=['year', 'date', 'primary_key'],
+                range_partitioning=bigquery.RangePartitioning(
+                    range_=bigquery.PartitionRange(start=2005, end=6005, interval=1),
+                    field="year"
+                )
+            )
+            job: LoadJob = client.load_table_from_dataframe(
+                data_to_send, destination_table_id, job_config=job_config
+            )  # Make an API request.
+            job.result()  # Wait for the job to complete.
+            table = client.get_table(destination_table_id)  # Make an API request.
+            print(f"Loaded {table.num_rows} rows and {len(table.schema)} columns to {destination_table_id}")
+            logging.info(f'Upload to BigQuery completed, job status: {job.state}')
 
         return 'True'
     except Exception as error:
@@ -242,11 +263,103 @@ async def push_to_bq_in_parallel(client,
 
         data_to_send = dd.concat(thread_data).compute(scheduler="processes")
         data_to_send['primary_key'] = np.vectorize(hash_element)(data_to_send['primary_key'])
+        metrics_df = data_to_send[['primary_key',
+                                   'incident_response_seconds_qy',
+                                   'incident_travel_tm_seconds_qy',
+                                   'engines_assigned_quantity',
+                                   'ladders_assigned_quantity',
+                                   'other_units_assigned_quantity',
+                                   'dispatch_response_seconds_qy']]
+
+        data_to_send = data_to_send.drop(metrics_df.columns)
+        data_to_send['primary_key'] = metrics_df['primary_key']
         try:
 
-            return upload_data_to_bq(client=client,
-                                     project_id=project_id,
-                                     table_name=table_name,
-                                     data_to_send=data_to_send)
+            metrics_res = await upload_data_to_bq(client=client,
+                                                  project_id=project_id,
+                                                  table_name=f'{table_name}_metrics',
+                                                  data_to_send=metrics_df)
+            return await upload_data_to_bq(client=client,
+                                           project_id=project_id,
+                                           table_name=table_name,
+                                           data_to_send=data_to_send)
         except ValueError as missing_data:
             print(missing_data)
+
+
+def delete_tables(client,
+                  project_id,
+                  table_name):
+    try:
+        delete_temp_table(client=client,
+                          project_id=project_id,
+                          table_name=f'{table_name}_metrics')
+        delete_temp_table(client=client,
+                          project_id=project_id,
+                          table_name=table_name)
+    except Exception as e:
+        print(f'there was an error while deleting temp tables: {e}')
+        raise
+
+
+def check_if_tables_exist(client,
+                          project_id,
+                          dataset_name,
+                          table_name):
+    try:
+        metrics_res = check_if_table_exists(client, dataset_name, f'{table_name}_metrics')
+        if metrics_res == 0:
+            create_partitioned_table(client,
+                                     project_id,
+                                     dataset_name,
+                                     f'{table_name}_metrics')
+        res = check_if_table_exists(client, dataset_name, table_name)
+        if res == 0:
+            create_partitioned_table(client,
+                                     project_id,
+                                     dataset_name,
+                                     table_name)
+    except Exception as e:
+        print(f'there was an error while checking if the tables exist: {e}')
+        raise
+
+
+def merge_tables(client,
+                 project_id,
+                 dataset_name,
+                 table_name):
+    try:
+        merge_data(client=client,
+                   project_id=project_id,
+                   dataset_name=dataset_name,
+                   table_name=f'{table_name}_metrics')
+        merge_data(client=client,
+                   project_id=project_id,
+                   dataset_name=dataset_name,
+                   table_name=table_name)
+    except Exception as e:
+        print(f'there was an error while checking if the tables exist: {e}')
+        raise
+
+
+def create_search_indexes(client,
+                          project_id,
+                          dataset_name,
+                          table_name):
+    try:
+        create_search_index_on_table(
+            client=client,
+            project_id=project_id,
+            dataset_name=dataset_name,
+            table_name=f'{table_name}_metrics'
+        )
+
+        create_search_index_on_table(
+            client=client,
+            project_id=project_id,
+            dataset_name=dataset_name,
+            table_name=table_name
+        )
+    except Exception as e:
+        print(f'there was an error while checking if the tables exist: {e}')
+        raise
