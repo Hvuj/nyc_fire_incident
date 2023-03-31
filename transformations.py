@@ -1,36 +1,29 @@
-from imports import timezone, datetime, re, delayed, dd
+from imports import dd, sha256
 
 
-def convert_datetime_timezone(dt, tz1, tz2):
-    tz1 = timezone(tz1)
-    tz2 = timezone(tz2)
+def hash_element(element):
+    """
+    Hashes an element using the sha256 algorithm.
 
-    if len(dt) >= 19:
-        datetime_str = str(dt)[:19]
-        dt = re.sub(r'(?is)T', ' ', datetime_str)
+    Parameters:
+    element (str): The element to be hashed.
 
-    dt = datetime.strptime(dt, "%Y-%m-%d %H:%M:%S")
-    dt = tz1.localize(dt)
-    dt = dt.astimezone(tz2)
-    dt = dt.strftime("%Y-%m-%d %H:%M:%S")
-
-    return dt
-
-
-@delayed
-def apply_convert_datetime_timezone(dt, from_tz, to_tz):
-    return convert_datetime_timezone(dt, from_tz, to_tz)
+    Returns:
+    str: The hexadecimal representation of the hashed element.
+    """
+    sha256_hash = sha256()
+    sha256_hash.update(element.encode('utf-8'))
+    return sha256_hash.hexdigest().strip()
 
 
-def convert_datetime_timezone_column(column, from_tz, to_tz):
-    # return dd.from_delayed([apply_convert_datetime_timezone(dt, from_tz, to_tz) for dt in column.compute()])
-    return dd.from_delayed([apply_convert_datetime_timezone(dt, from_tz, to_tz) for dt in column])
-
-
-# def convert_datetime_timezone_column(column, from_tz, to_tz):
-#     delayed_results = [apply_convert_datetime_timezone(dt, from_tz, to_tz) for dt in column]
-#     return dd.from_delayed(delayed_results, meta=pd.Series(dtype='str'))
 def parse_data(data_to_parse):
     data_to_parse['date'] = dd.to_datetime(data_to_parse['incident_datetime']).dt.date
     data_to_parse['year'] = dd.to_datetime(data_to_parse['incident_datetime']).dt.year
+    data_to_parse['primary_key'] = data_to_parse['starfire_incident_id'].astype(str) + "_" + \
+                                   data_to_parse['incident_datetime'].astype(str) + "_" + \
+                                   data_to_parse['alarm_box_borough'].astype(str) + "_" + \
+                                   data_to_parse['alarm_box_number'].astype(str) + "_" + \
+                                   data_to_parse['highest_alarm_level'].astype(str) + "_" + \
+                                   data_to_parse['incident_classification'].astype(str) + "_" + \
+                                   data_to_parse['incident_close_datetime'].astype(str)
     return data_to_parse

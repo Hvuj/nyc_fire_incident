@@ -6,8 +6,8 @@ from google.cloud.bigquery import LoadJobConfig, Client, LoadJob, Table, QueryJo
 from pathlib import Path
 from dotenv import load_dotenv
 from pytz import timezone
-from dask import delayed
 from datetime import timedelta, date, datetime
+from hashlib import sha256
 import concurrent.futures as cf
 import os
 import logging
@@ -32,5 +32,5 @@ __all__ = [
     'Union', 'Callable', 'Mapping', 'Optional', 'List', 'Final', 'Any', 'TypedDict', 'Dict',
     'QueryJob', 'BigQueryError', 'logging', 'Client', 'MutableMapping', 'bigquery',
     'pd', 'LoadJobConfig', 'LoadJob', 'Table', 'io', 'Path', 'load_dotenv', 'os', 'np', 'datetime', 'timezone', 're',
-    'dd', 'asyncio', 'aiohttp', 'delayed', 'cf', 'time', 'timedelta', 'date', 'mp', 'DateRange'
+    'dd', 'asyncio', 'aiohttp', 'cf', 'time', 'timedelta', 'date', 'mp', 'DateRange', 'sha256'
 ]
