@@ -1,7 +1,7 @@
 from imports import pd, io, bigquery, dd, asyncio, aiohttp, cf, List
 from settings import TOKEN
-from data_utils import prepare_data_by_day, push_to_bq_in_parallel, create_partitioned_table, check_if_table_exists, \
-    delete_temp_table, merge_data, create_search_index_on_table
+from data_utils import prepare_data_by_day, push_to_bq_in_parallel, create_search_indexes, delete_tables, \
+    check_if_tables_exist, merge_tables
 
 
 async def get_data(session, param, offset: int = 0):
@@ -76,9 +76,9 @@ async def main(start_date,
                token):
     try:
         client = bigquery.Client(project_id)
-        delete_temp_table(client=client,
-                          project_id=project_id,
-                          table_name=table_name)
+        delete_tables(client=client,
+                      project_id=project_id,
+                      table_name=table_name)
 
         list_of_params = prepare_data_by_day(start_date, end_date)
 
@@ -88,18 +88,20 @@ async def main(start_date,
                 chunk = list_of_params[api_chunk:api_chunk + chunk_size]
                 future = executor.submit(load_and_push, chunk, token, project_id, table_name, client)
                 print(future.result())
-        res = check_if_table_exists(client, dataset_name, table_name)
-        if res == 0:
-            create_partitioned_table(client,
-                                     project_id,
-                                     dataset_name,
-                                     table_name)
 
-        merge_data(client=client,
-                   project_id=project_id,
-                   dataset_name=dataset_name,
-                   table_name=table_name)
-        create_search_index_on_table(
+        check_if_tables_exist(client=client,
+                              project_id=project_id,
+                              dataset_name=dataset_name,
+                              table_name=table_name)
+
+        merge_tables(
+            client=client,
+            project_id=project_id,
+            dataset_name=dataset_name,
+            table_name=table_name
+        )
+
+        create_search_indexes(
             client=client,
             project_id=project_id,
             dataset_name=dataset_name,
@@ -112,28 +114,17 @@ async def main(start_date,
 
 
 def run(request):
-    # project_id = request.get_json().get('project_id')
-    # dataset_name = request.get_json().get('dataset_name')
-    # table_name = request.get_json().get('table_name')
-    # start_date = request.get_json().get('start_date')
-    # end_date = request.get_json().get('end_date')
-    project_id = 'main-project-362218'
-    dataset_name = 'main_data'
-    table_name = 'nyc_fire_incident_data_TEST'
-    token = f'{TOKEN}'
-
-    start_date = '2005-01-01'
-    end_date = '2005-01-05'
+    project_id = request.get_json().get('project_id')
+    dataset_name = request.get_json().get('dataset_name')
+    table_name = request.get_json().get('table_name')
+    start_date = request.get_json().get('start_date')
+    end_date = request.get_json().get('end_date')
 
     batches_data = asyncio.run(main(start_date=start_date,
                                     end_date=end_date,
                                     project_id=project_id,
                                     dataset_name=dataset_name,
                                     table_name=table_name,
-                                    token=token))
+                                    token=TOKEN))
 
     return 'True' if isinstance(batches_data, bool) else 'False'
-
-
-if __name__ == '__main__':
-    run('us')
