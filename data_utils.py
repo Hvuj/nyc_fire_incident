@@ -174,13 +174,6 @@ def run_job(client: bigquery.Client, destination_table_id: str, data_to_send: pd
                     field="year"
                 )
             )
-            job: LoadJob = client.load_table_from_dataframe(
-                data_to_send, destination_table_id, job_config=job_config
-            )  # Make an API request.
-            job.result()  # Wait for the job to complete.
-            table = client.get_table(destination_table_id)  # Make an API request.
-            print(f"Loaded {table.num_rows} rows and {len(table.schema)} columns to {destination_table_id}")
-            logging.info(f'Upload to BigQuery completed, job status: {job.state}')
         else:
             job_config: LoadJobConfig = bigquery.LoadJobConfig(
                 write_disposition="WRITE_APPEND",
@@ -193,14 +186,13 @@ def run_job(client: bigquery.Client, destination_table_id: str, data_to_send: pd
                     field="year"
                 )
             )
-            job: LoadJob = client.load_table_from_dataframe(
-                data_to_send, destination_table_id, job_config=job_config
-            )  # Make an API request.
-            job.result()  # Wait for the job to complete.
-            table = client.get_table(destination_table_id)  # Make an API request.
-            print(f"Loaded {table.num_rows} rows and {len(table.schema)} columns to {destination_table_id}")
-            logging.info(f'Upload to BigQuery completed, job status: {job.state}')
-
+        job: LoadJob = client.load_table_from_dataframe(
+            data_to_send, destination_table_id, job_config=job_config
+        )  # Make an API request.
+        job.result()  # Wait for the job to complete.
+        table = client.get_table(destination_table_id)  # Make an API request.
+        print(f"Loaded {table.num_rows} rows and {len(table.schema)} columns to {destination_table_id}")
+        logging.info(f'Upload to BigQuery completed, job status: {job.state}')
         return 'True'
     except Exception as error:
         print('Error loading data to bq table')
