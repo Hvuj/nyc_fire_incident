@@ -121,7 +121,7 @@ def run(request):
     # end_date = request.get_json().get('end_date')
     project_id = 'main-project-362218'
     dataset_name = 'main_data'
-    table_name = 'nyc_fire_incident_data_TEST'
+    table_name = 'nyc_fire_incident_data'
     token = f'{TOKEN}'
 
     start_date = '2005-01-01'

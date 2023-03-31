@@ -254,7 +254,7 @@ def prepare_data_by_day(start_date: str,
 async def push_to_bq_in_parallel(client,
                                  batches_data: List[Any],
                                  project_id: str,
-                                 table_name: str) -> str:
+                                 table_name: str) -> bool:
     max_cpu_count: Final[int] = int(mp.cpu_count())
 
     with cf.ThreadPoolExecutor(max_workers=max_cpu_count + 4) as mp_executor:
@@ -264,6 +264,8 @@ async def push_to_bq_in_parallel(client,
         data_to_send = dd.concat(thread_data).compute(scheduler="processes")
         data_to_send['primary_key'] = np.vectorize(hash_element)(data_to_send['primary_key'])
         metrics_df = data_to_send[['primary_key',
+                                   'date',
+                                   'year',
                                    'incident_response_seconds_qy',
                                    'incident_travel_tm_seconds_qy',
                                    'engines_assigned_quantity',
@@ -275,14 +277,15 @@ async def push_to_bq_in_parallel(client,
         data_to_send['primary_key'] = metrics_df['primary_key']
         try:
 
-            metrics_res = await upload_data_to_bq(client=client,
-                                                  project_id=project_id,
-                                                  table_name=f'{table_name}_metrics',
-                                                  data_to_send=metrics_df)
-            return await upload_data_to_bq(client=client,
-                                           project_id=project_id,
-                                           table_name=table_name,
-                                           data_to_send=data_to_send)
+            await upload_data_to_bq(client=client,
+                                    project_id=project_id,
+                                    table_name=f'{table_name}_metrics',
+                                    data_to_send=metrics_df)
+            await upload_data_to_bq(client=client,
+                                    project_id=project_id,
+                                    table_name=table_name,
+                                    data_to_send=data_to_send)
+            return True
         except ValueError as missing_data:
             print(missing_data)
 
