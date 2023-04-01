@@ -10,16 +10,27 @@ def create_partitioned_table(client: bigquery.Client,
     table_id: str = f'{project_id}.{dataset_name}.{table_name}'
 
     try:
-        query_to_run: Final[str] = f"""
-        create or replace table `{table_id}`
-        partition by RANGE_BUCKET(year,  GENERATE_ARRAY(2005, 6005,1))
-        cluster by incident_borough,incident_classification_group,incident_classification,alarm_level_index_description
-        as (
-           select * from `{project_id}.staging.{table_name}_staging`
-        )
-        """
+
+        if 'metrics' in table_name:
+            query_to_run: Final[str] = f"""
+            create or replace table `{table_id}`
+            partition by RANGE_BUCKET(year,  GENERATE_ARRAY(2005, 6005,1))
+            cluster by year,date,primary_key
+            as (
+               select * from `{project_id}.staging.{table_name}_staging`
+            )
+            """
+        else:
+            query_to_run: Final[str] = f"""
+            create or replace table `{table_id}`
+            partition by RANGE_BUCKET(year,  GENERATE_ARRAY(2005, 6005,1))
+            cluster by incident_borough,incident_classification_group,incident_classification,alarm_level_index_description
+            as (
+               select * from `{project_id}.staging.{table_name}_staging`
+            )
+            """
         query: bigquery.QueryJob = client.query(query_to_run)
-        print('Table deleted successfully')
+        print(f'Table has been created successfully: {table_id}')
         for row in query.result():
             return row[0]
 
@@ -33,22 +44,19 @@ def check_if_table_exists(client: bigquery.Client,
                           table_name: str) -> str:
     try:
         query_to_run: Final[str] = f"""
-        IF EXISTS (
-        
-        select 
-          sum(size_bytes)/pow(10,9) as size
-        from
-          {dataset_name}.__TABLES__
-        where 
-          table_id = '{table_name}'
-            )
-        THEN
-            (
-               select 1
-            );
-        ELSE
-            SELECT 0;
-        END IF
+         SELECT
+        IF
+          ((
+            SELECT
+              SUM(size_bytes)/POW(10,9) AS size
+            FROM
+              {dataset_name}.__TABLES__
+            WHERE
+              table_id = '{table_name}' ) IS NOT NULL, ( (
+              SELECT
+                1) ),(
+            SELECT
+              0))
         """
         query: bigquery.QueryJob = client.query(query_to_run)
         for row in query.result():
@@ -85,7 +93,7 @@ def create_search_index_on_table(client: bigquery.Client,
         );
         """
         query: bigquery.QueryJob = client.query(query_to_run)
-        print('Table deleted successfully')
+        print(f'Table search index has been created: {table_id}')
         return 'True'
 
     except Exception as error:
@@ -99,7 +107,7 @@ def delete_temp_table(client: bigquery.Client,
     table_id: str = f'{project_id}.staging.{table_name}_staging'
 
     try:
-        query_to_run: Final[str] = f"""drop table if exists `{table_id}; """
+        query_to_run: Final[str] = f"""drop table if exists `{table_id}`; """
         query: bigquery.QueryJob = client.query(query_to_run)
         print(f'Table deleted successfully: {table_id}')
         return 'True'
@@ -159,7 +167,7 @@ def run_job(client: bigquery.Client, destination_table_id: str, data_to_send: pd
     try:
         logging.info(f'Pushing data to table: {destination_table_id}')
 
-        if 'metrics' in destination_table_id:
+        if 'metrics' not in destination_table_id:
             job_config: LoadJobConfig = bigquery.LoadJobConfig(
                 write_disposition="WRITE_APPEND",
                 skip_leading_rows=0,
@@ -253,8 +261,9 @@ async def push_to_bq_in_parallel(client,
         data_results = [mp_executor.submit(parse_data, sec) for sec in batches_data]
         thread_data = [f.result() for f in cf.as_completed(data_results)]
 
-        data_to_send = dd.concat(thread_data).compute(scheduler="processes")
+        data_to_send = dd.concat(thread_data).compute(scheduler="threads")
         data_to_send['primary_key'] = np.vectorize(hash_element)(data_to_send['primary_key'])
+
         metrics_df = data_to_send[['primary_key',
                                    'date',
                                    'year',
@@ -265,8 +274,12 @@ async def push_to_bq_in_parallel(client,
                                    'other_units_assigned_quantity',
                                    'dispatch_response_seconds_qy']]
 
-        data_to_send = data_to_send.drop(metrics_df.columns)
+        data_to_send = data_to_send.drop(metrics_df.columns, axis=1)
+
         data_to_send['primary_key'] = metrics_df['primary_key']
+        data_to_send['year'] = metrics_df['year']
+        data_to_send['date'] = metrics_df['date']
+
         try:
 
             await upload_data_to_bq(client=client,

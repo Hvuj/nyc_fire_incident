@@ -114,11 +114,18 @@ async def main(start_date,
 
 
 def run(request):
-    project_id = request.get_json().get('project_id')
-    dataset_name = request.get_json().get('dataset_name')
-    table_name = request.get_json().get('table_name')
-    start_date = request.get_json().get('start_date')
-    end_date = request.get_json().get('end_date')
+    # project_id = request.get_json().get('project_id')
+    # dataset_name = request.get_json().get('dataset_name')
+    # table_name = request.get_json().get('table_name')
+    # start_date = request.get_json().get('start_date')
+    # end_date = request.get_json().get('end_date')
+
+    project_id = 'main-project-362218'
+    dataset_name = 'main_data'
+    table_name = 'nyc_fire_incident_data'
+    start_date = '2005-01-01'
+    end_date = '2005-03-31'
+    TOKEN = 'knExmCkxStTyHWq1aidm8bMRP'
 
     batches_data = asyncio.run(main(start_date=start_date,
                                     end_date=end_date,
@@ -128,3 +135,7 @@ def run(request):
                                     token=TOKEN))
 
     return 'True' if isinstance(batches_data, bool) else 'False'
+
+
+if __name__ == '__main__':
+    run('s')
