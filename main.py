@@ -61,11 +61,15 @@ async def load_data_to_df(params, token: str):
 def load_and_push(chunk, token, project_id, table_name, client):
     async def load_and_push_async(chunk, token, project_id, table_name, client):
         api_results = await load_data_to_df(chunk, token)
-        return await push_to_bq_in_parallel(
-            client, [api_results], project_id, table_name
-        )
+        if len(api_results.index) > 0:
+            return await push_to_bq_in_parallel(
+                client, [api_results], project_id, table_name
+            )
 
-    return asyncio.run(load_and_push_async(chunk, token, project_id, table_name, client))
+        return asyncio.run(load_and_push_async(chunk, token, project_id, table_name, client))
+
+    print('There is no new data available')
+    return False
 
 
 async def main(start_date,
@@ -88,27 +92,27 @@ async def main(start_date,
                 chunk = list_of_params[api_chunk:api_chunk + chunk_size]
                 future = executor.submit(load_and_push, chunk, token, project_id, table_name, client)
                 print(future.result())
+        if not isinstance(future.result(), bool):
+            check_if_tables_exist(client=client,
+                                  project_id=project_id,
+                                  dataset_name=dataset_name,
+                                  table_name=table_name)
 
-        check_if_tables_exist(client=client,
-                              project_id=project_id,
-                              dataset_name=dataset_name,
-                              table_name=table_name)
+            merge_tables(
+                client=client,
+                project_id=project_id,
+                dataset_name=dataset_name,
+                table_name=table_name
+            )
 
-        merge_tables(
-            client=client,
-            project_id=project_id,
-            dataset_name=dataset_name,
-            table_name=table_name
-        )
-
-        create_search_indexes(
-            client=client,
-            project_id=project_id,
-            dataset_name=dataset_name,
-            table_name=table_name
-        )
-        return True
-
+            create_search_indexes(
+                client=client,
+                project_id=project_id,
+                dataset_name=dataset_name,
+                table_name=table_name
+            )
+            return True
+        return False
     except Exception as error:
         raise error
 
@@ -119,13 +123,12 @@ def run(request):
     table_name = request.get_json().get('table_name')
     start_date = request.get_json().get('start_date')
     end_date = request.get_json().get('end_date')
-
+    #
     # project_id = 'main-project-362218'
     # dataset_name = 'main_data'
     # table_name = 'nyc_fire_incident_data'
-    # start_date = '2005-01-01'
-    # end_date = '2005-03-31'
-    # TOKEN = 'knExmCkxStTyHWq1aidm8bMRP'
+    # start_date = '2021-08-02'
+    # end_date = '2023-03-31'
 
     batches_data = asyncio.run(main(start_date=start_date,
                                     end_date=end_date,
