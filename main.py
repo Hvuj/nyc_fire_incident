@@ -61,9 +61,6 @@ async def load_data_to_df(params, token: str):
 def load_and_push(chunk, token, project_id, table_name, client):
     async def load_and_push_async(chunk, token, project_id, table_name, client):
         api_results = await load_data_to_df(chunk, token)
-        if len(api_results.index) == 0:
-            print('There is not new data available')
-            return False
         return await push_to_bq_in_parallel(
             client, [api_results], project_id, table_name
         )
@@ -90,28 +87,26 @@ async def main(start_date,
             for api_chunk in range(0, len(list_of_params), chunk_size):
                 chunk = list_of_params[api_chunk:api_chunk + chunk_size]
                 future = executor.submit(load_and_push, chunk, token, project_id, table_name, client)
-                print(future.result())
-        if not isinstance(future.result(), bool):
-            check_if_tables_exist(client=client,
-                                  project_id=project_id,
-                                  dataset_name=dataset_name,
-                                  table_name=table_name)
 
-            merge_tables(
-                client=client,
-                project_id=project_id,
-                dataset_name=dataset_name,
-                table_name=table_name
-            )
+        check_if_tables_exist(client=client,
+                              project_id=project_id,
+                              dataset_name=dataset_name,
+                              table_name=table_name)
 
-            create_search_indexes(
-                client=client,
-                project_id=project_id,
-                dataset_name=dataset_name,
-                table_name=table_name
-            )
-            return True
-        return False
+        merge_tables(
+            client=client,
+            project_id=project_id,
+            dataset_name=dataset_name,
+            table_name=table_name
+        )
+
+        create_search_indexes(
+            client=client,
+            project_id=project_id,
+            dataset_name=dataset_name,
+            table_name=table_name
+        )
+        return True
     except Exception as error:
         raise error
 
