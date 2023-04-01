@@ -11,9 +11,12 @@ def hash_element(element):
     Returns:
     str: The hexadecimal representation of the hashed element.
     """
-    sha256_hash = sha256()
-    sha256_hash.update(element.encode('utf-8'))
-    return sha256_hash.hexdigest().strip()
+    try:
+        sha256_hash = sha256()
+        sha256_hash.update(element.encode('utf-8'))
+        return sha256_hash.hexdigest().strip()
+    except Exception as e:
+        print(e)
 
 
 def parse_data(data_to_parse):
