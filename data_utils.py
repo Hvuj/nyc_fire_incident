@@ -262,25 +262,25 @@ async def push_to_bq_in_parallel(client,
         thread_data = [f.result() for f in cf.as_completed(data_results)]
 
         data_to_send = dd.concat(thread_data).compute(scheduler="threads")
-        data_to_send['primary_key'] = np.vectorize(hash_element)(data_to_send['primary_key'])
-
-        metrics_df = data_to_send[['primary_key',
-                                   'date',
-                                   'year',
-                                   'incident_response_seconds_qy',
-                                   'incident_travel_tm_seconds_qy',
-                                   'engines_assigned_quantity',
-                                   'ladders_assigned_quantity',
-                                   'other_units_assigned_quantity',
-                                   'dispatch_response_seconds_qy']]
-
-        data_to_send = data_to_send.drop(metrics_df.columns, axis=1)
-
-        data_to_send['primary_key'] = metrics_df['primary_key']
-        data_to_send['year'] = metrics_df['year']
-        data_to_send['date'] = metrics_df['date']
-
         try:
+
+            data_to_send['primary_key'] = np.vectorize(hash_element)(data_to_send['primary_key'])
+
+            metrics_df = data_to_send[['primary_key',
+                                       'date',
+                                       'year',
+                                       'incident_response_seconds_qy',
+                                       'incident_travel_tm_seconds_qy',
+                                       'engines_assigned_quantity',
+                                       'ladders_assigned_quantity',
+                                       'other_units_assigned_quantity',
+                                       'dispatch_response_seconds_qy']]
+
+            data_to_send = data_to_send.drop(metrics_df.columns, axis=1)
+
+            data_to_send['primary_key'] = metrics_df['primary_key']
+            data_to_send['year'] = metrics_df['year']
+            data_to_send['date'] = metrics_df['date']
 
             await upload_data_to_bq(client=client,
                                     project_id=project_id,
