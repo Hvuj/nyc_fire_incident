@@ -61,15 +61,14 @@ async def load_data_to_df(params, token: str):
 def load_and_push(chunk, token, project_id, table_name, client):
     async def load_and_push_async(chunk, token, project_id, table_name, client):
         api_results = await load_data_to_df(chunk, token)
-        if len(api_results.index) > 0:
-            return await push_to_bq_in_parallel(
-                client, [api_results], project_id, table_name
-            )
+        if len(api_results.index) == 0:
+            print('There is not new data available')
+            return False
+        return await push_to_bq_in_parallel(
+            client, [api_results], project_id, table_name
+        )
 
-        return asyncio.run(load_and_push_async(chunk, token, project_id, table_name, client))
-
-    print('There is no new data available')
-    return False
+    return asyncio.run(load_and_push_async(chunk, token, project_id, table_name, client))
 
 
 async def main(start_date,
@@ -123,11 +122,11 @@ def run(request):
     table_name = request.get_json().get('table_name')
     start_date = request.get_json().get('start_date')
     end_date = request.get_json().get('end_date')
-    #
+
     # project_id = 'main-project-362218'
     # dataset_name = 'main_data'
     # table_name = 'nyc_fire_incident_data'
-    # start_date = '2021-08-02'
+    # start_date = '2023-01-01'
     # end_date = '2023-03-31'
 
     batches_data = asyncio.run(main(start_date=start_date,
